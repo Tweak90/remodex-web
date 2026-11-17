@@ -18,8 +18,12 @@ Create a private `.env` beside `compose.yaml` containing:
 - `CODEX_WS_URL`: the WebSocket URL of the existing Codex gateway.
 - `CODEX_API_TOKEN`: the existing gateway's authentication token.
 
-The login password must contain at least 12 characters. Browser sessions expire
-after 24 hours and are invalidated when the container restarts. `COOKIE_SECURE=true`
+The initial login password must contain at least four characters. After login,
+use **Passwort ändern** in the sidebar to choose a new password of at least
+12 characters. Changing it requires the current password and signs out other
+browser sessions. The current browser receives a fresh session automatically.
+Browser sessions expire after 24 hours and are invalidated when the container
+restarts. `COOKIE_SECURE=true`
 requires HTTPS and adds the Secure cookie flag. `HOST_LABEL` is an optional display
 name; `CODEX_PROJECTS` is an optional JSON array of `{ "name", "path" }` entries
 referring to directories on the existing Codex machine. The selector combines
@@ -49,7 +53,14 @@ from a private network, set `WEB_BIND` to an address on that network;
 private tunnel when the browser and server are on different machines.
 
 The container runs as the unprivileged `node` user, with a read-only filesystem,
-temporary storage at `/tmp`, and no host mounts. The backend gateway token stays
+temporary storage at `/tmp`, and no host mounts. The `web-auth` volume stores
+only the salted password hash in `/data/auth.json`; no plaintext password is
+written there. Keep that volume across upgrades. Once initialized, the stored
+password takes precedence over the bootstrap environment variable. A changed
+password therefore survives a container replacement; the original environment
+value no longer signs in. Private deployment notes recording a bootstrap
+password do not automatically update after a browser password change.
+The backend gateway token stays
 on the server side. No second Codex runtime or separate Codex login is created.
 
 ## Dockhand

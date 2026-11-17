@@ -10,6 +10,7 @@ COPY web/package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY web/ ./
 COPY LICENSE /app/LICENSE
+RUN mkdir -p /data && chown node:node /data && chmod 700 /data
 
 USER node
 ENV NODE_ENV=production PORT=3000

@@ -47,6 +47,7 @@ function notice(error) {
 function showLogin() {
   state.source?.close();
   state.source = null;
+  if ($('password-dialog').open) $('password-dialog').close();
   $('app').hidden = true;
   $('login').hidden = false;
   $('password').focus();
@@ -817,6 +818,67 @@ async function respond(id, result, card) {
   card.remove();
   state.requests.delete(String(id));
 }
+
+let passwordSaving = false;
+
+function clearPasswordForm() {
+  $('password-form').reset();
+  $('confirm-password').setCustomValidity('');
+  $('password-error').textContent = '';
+}
+
+$('change-password').addEventListener('click', () => {
+  clearPasswordForm();
+  $('password-dialog').showModal();
+  $('current-password').focus();
+});
+$('password-dialog-close').addEventListener('click', () => { if (!passwordSaving) $('password-dialog').close(); });
+$('password-cancel').addEventListener('click', () => { if (!passwordSaving) $('password-dialog').close(); });
+$('password-dialog').addEventListener('cancel', (event) => { if (passwordSaving) event.preventDefault(); });
+$('password-dialog').addEventListener('close', () => {
+  clearPasswordForm();
+  if (!$('app').hidden) $('change-password').focus();
+});
+for (const id of ['new-password', 'confirm-password']) $(id).addEventListener('input', () => {
+  $('confirm-password').setCustomValidity('');
+  $('password-error').textContent = '';
+});
+$('password-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (passwordSaving) return;
+  const currentPassword = $('current-password').value;
+  const newPassword = $('new-password').value;
+  const confirmation = $('confirm-password').value;
+  $('password-error').textContent = '';
+  if (newPassword !== confirmation) {
+    $('password-error').textContent = 'Die neuen Passwörter stimmen nicht überein.';
+    $('confirm-password').setCustomValidity('Die neuen Passwörter stimmen nicht überein.');
+    $('confirm-password').reportValidity();
+    $('confirm-password').focus();
+    return;
+  }
+  if (newPassword.length < 12 || newPassword.length > 1024) {
+    $('password-error').textContent = 'Das neue Passwort muss zwischen 12 und 1024 Zeichen lang sein.';
+    $('new-password').focus();
+    return;
+  }
+  passwordSaving = true;
+  $('password-form').setAttribute('aria-busy', 'true');
+  for (const id of ['current-password', 'new-password', 'confirm-password', 'password-dialog-close', 'password-cancel', 'password-save']) $(id).disabled = true;
+  $('password-save').textContent = 'Wird gespeichert …';
+  try {
+    await api('/api/password', { currentPassword, newPassword, confirmation });
+    $('password-dialog').close();
+    notice('Passwort geändert. Andere Sitzungen wurden abgemeldet.');
+  } catch (error) {
+    $('password-error').textContent = error.message;
+  } finally {
+    passwordSaving = false;
+    $('password-form').removeAttribute('aria-busy');
+    for (const id of ['current-password', 'new-password', 'confirm-password', 'password-dialog-close', 'password-cancel', 'password-save']) $(id).disabled = false;
+    $('password-save').textContent = 'Passwort speichern';
+  }
+});
 
 function closeSidebar() { $('sidebar').classList.remove('open'); $('sidebar-shade').hidden = true; }
 $('open-sidebar').addEventListener('click', () => { $('sidebar').classList.add('open'); $('sidebar-shade').hidden = false; });

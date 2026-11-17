@@ -42,7 +42,7 @@
           <p id="unassigned-threads-status" class="thread-status" role="status"></p>
         </section>
       </div>
-      <div class="sidebar-footer"><div class="user-avatar" aria-hidden="true">S</div><div><strong>Deine Codex-Umgebung</strong><small id="host-label">Verbindung wird hergestellt</small></div><button id="logout" class="icon-button" aria-label="Abmelden" title="Abmelden">⇥</button></div>
+      <div class="sidebar-footer"><div class="user-avatar" aria-hidden="true">S</div><div><strong>Deine Codex-Umgebung</strong><small id="host-label">Verbindung wird hergestellt</small></div><div class="footer-actions"><button id="change-password" class="password-button" type="button" aria-label="Passwort ändern" title="Passwort ändern"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="9" r="4"></circle><path d="m11 12 8 8m-3-3 2-2m-5-1 2-2"></path></svg><span>Passwort ändern</span></button><button id="logout" class="icon-button" aria-label="Abmelden" title="Abmelden">⇥</button></div></div>
     </aside>
     <button id="sidebar-shade" class="sidebar-shade" aria-label="Navigation schließen" hidden></button>
     <main class="main">
@@ -55,5 +55,19 @@
       <div class="composer-area"><div id="run-state" class="run-state" role="status" hidden><span class="pulse-dot"></span><span>Codex arbeitet …</span></div><form id="composer" class="composer"><label class="sr-only" for="prompt">Nachricht an Codex</label><textarea id="prompt" placeholder="Was möchtest du mit Codex angehen?" rows="2" required></textarea><div class="runtime-controls" aria-label="Einstellungen für die nächste Nachricht" title="Einstellungen für die nächste Nachricht"><label for="model">Modell<select id="model" disabled><option value="">Wird geladen …</option></select></label><label for="effort">Denkgrad<select id="effort" disabled><option value="">Wird geladen …</option></select></label><label id="service-tier-label" for="service-tier" hidden>Tempo<select id="service-tier"><option value="default">Standard</option></select></label></div><div class="composer-bottom"><span id="composer-context">Wähle links ein Projekt für ein neues Gespräch.</span><button id="stop" type="button" class="stop-button" hidden><span aria-hidden="true">■</span> Anhalten</button><button id="send" type="submit" class="send-button" aria-label="Nachricht senden" title="Senden (Enter)">↑</button></div></form><p class="composer-hint"><span>Enter zum Senden · Shift + Enter für einen Absatz</span><span>remodex-web · eigenständiger Fork</span></p></div>
     </main>
   </div>
+  <dialog id="password-dialog" class="password-dialog" aria-labelledby="password-dialog-title" aria-describedby="password-dialog-help">
+    <form id="password-form">
+      <div class="password-dialog-heading"><h2 id="password-dialog-title">Passwort ändern</h2><button id="password-dialog-close" class="icon-button" type="button" aria-label="Dialog schließen" title="Schließen">×</button></div>
+      <p id="password-dialog-help">Das neue Passwort muss mindestens 12 Zeichen lang sein. Andere angemeldete Sitzungen werden abgemeldet.</p>
+      <label for="current-password">Aktuelles Passwort</label>
+      <input id="current-password" name="currentPassword" type="password" autocomplete="current-password" maxlength="1024" required autofocus>
+      <label for="new-password">Neues Passwort</label>
+      <input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="1024" aria-describedby="password-dialog-help" required>
+      <label for="confirm-password">Neues Passwort bestätigen</label>
+      <input id="confirm-password" name="confirmation" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+      <p id="password-error" class="form-error" role="alert" aria-live="polite"></p>
+      <div class="password-dialog-actions"><button id="password-cancel" class="password-cancel" type="button">Abbrechen</button><button id="password-save" class="primary" type="submit">Passwort speichern</button></div>
+    </form>
+  </dialog>
 </body>
 </html>

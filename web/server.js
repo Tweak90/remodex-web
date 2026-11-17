@@ -1,10 +1,11 @@
 // Browser server added by the remodex-web fork; Apache-2.0.
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { CodexConnection } from './codex.js';
 import { createCatalog, readRuntime, sanitizeUsage } from './catalog.js';
+import { createPasswordStore } from './auth.js';
 
 const allowedMethods = new Set([
   'thread/list', 'thread/read', 'thread/start', 'thread/resume',
@@ -14,9 +15,8 @@ const hash = (value) => createHash('sha256').update(value).digest();
 const problem = (status, message) => Object.assign(new Error(message), { status });
 const sessionDuration = 24 * 60 * 60 * 1000;
 
-export async function createWebServer({ password, bridge, hostLabel = 'Codex', projects = [], secureCookie = false } = {}) {
-  if (typeof password !== 'string' || password.length < 12) throw new Error('CODEX_WEB_PASSWORD must contain at least 12 characters');
-  const expectedPassword = hash(password);
+export async function createWebServer({ password, authStateFile, bridge, hostLabel = 'Codex', projects = [], secureCookie = false } = {}) {
+  const credentials = await createPasswordStore({ password, authStateFile });
   const catalog = createCatalog({ bridge, projects });
   const sessions = new Map();
   const attempts = new Map();
@@ -41,6 +41,29 @@ export async function createWebServer({ password, bridge, hostLabel = 'Codex', p
     return session?.expires > Date.now() ? { ...session, key } : null;
   };
   const cookie = (value, maxAge) => `remodex_web_session=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`;
+  const issueSession = (res) => {
+    const token = randomBytes(32).toString('base64url');
+    if (sessions.size >= 100) sessions.delete(sessions.keys().next().value);
+    sessions.set(hash(token).toString('hex'), { expires: Date.now() + sessionDuration });
+    res.setHeader('Set-Cookie', cookie(token, sessionDuration / 1000));
+  };
+  const checkAttempts = (req) => {
+    const ip = req.socket.remoteAddress;
+    const now = Date.now();
+    let attempt = attempts.get(ip);
+    if (!attempt || attempt.until <= now) attempt = { count: 0, until: now + 60000 };
+    if (attempt.count >= 10) throw problem(429, 'Zu viele Versuche. Bitte eine Minute warten.');
+    return { ip, attempt };
+  };
+  const checkPassword = async (req, auth, candidate, failureStatus) => {
+    const { ip, attempt } = checkAttempts(req);
+    if (!await auth.verify(candidate)) {
+      attempt.count++;
+      attempts.set(ip, attempt);
+      throw problem(failureStatus, 'Das Passwort ist nicht korrekt.');
+    }
+    return ip;
+  };
   const verifyOrigin = (req) => {
     if (req.headers['sec-fetch-site'] === 'cross-site') throw problem(403, 'Fremder Ursprung nicht erlaubt');
     if (req.headers.origin) {
@@ -58,7 +81,11 @@ export async function createWebServer({ password, bridge, hostLabel = 'Codex', p
       if (size > 1024 * 1024) throw problem(413, 'Nachricht zu groß');
       chunks.push(chunk);
     }
-    try { return JSON.parse(Buffer.concat(chunks).toString()); }
+    try {
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+      if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error();
+      return body;
+    }
     catch { throw problem(400, 'Ungültiges JSON'); }
   };
   const broadcast = (message) => {
@@ -99,26 +126,34 @@ export async function createWebServer({ password, bridge, hostLabel = 'Codex', p
       }
       verifyOrigin(req);
       if (req.method === 'POST' && url.pathname === '/api/login') {
-        const ip = req.socket.remoteAddress;
-        const now = Date.now();
-        const attempt = attempts.get(ip) || { count: 0, until: now + 60000 };
-        if (attempt.until > now && attempt.count >= 10) throw problem(429, 'Zu viele Versuche. Bitte eine Minute warten.');
-        if (attempt.until < now) { attempt.count = 0; attempt.until = now + 60000; }
         const body = await readJSON(req);
-        if (typeof body.password !== 'string' || !timingSafeEqual(hash(body.password), expectedPassword)) {
-          attempt.count++;
-          attempts.set(ip, attempt);
-          throw problem(401, 'Das Passwort ist nicht korrekt.');
-        }
-        attempts.delete(ip);
-        const token = randomBytes(32).toString('base64url');
-        if (sessions.size >= 100) sessions.delete(sessions.keys().next().value);
-        sessions.set(hash(token).toString('hex'), { expires: now + sessionDuration });
-        res.setHeader('Set-Cookie', cookie(token, sessionDuration / 1000));
-        return send(res, 200, { ok: true });
+        return await credentials.transaction(async auth => {
+          const ip = await checkPassword(req, auth, body.password, 401);
+          attempts.delete(ip);
+          issueSession(res);
+          send(res, 200, { ok: true });
+        });
       }
       const session = getSession(req);
       if (!session) throw problem(401, 'Bitte anmelden.');
+      if (req.method === 'POST' && url.pathname === '/api/password') {
+        const body = await readJSON(req);
+        if (typeof body.newPassword !== 'string' || body.newPassword.length < 12 || body.newPassword.length > 1024)
+          throw problem(400, 'Das neue Passwort muss zwischen 12 und 1024 Zeichen enthalten.');
+        if (typeof body.confirmation !== 'string' || body.confirmation !== body.newPassword)
+          throw problem(400, 'Die neuen Passwörter stimmen nicht überein.');
+        return await credentials.transaction(async auth => {
+          if (!getSession(req)) throw problem(401, 'Bitte anmelden.');
+          const ip = await checkPassword(req, auth, body.currentPassword, 403);
+          await auth.replace(body.newPassword);
+          sessions.clear();
+          for (const stream of events.keys()) stream.end();
+          events.clear();
+          attempts.delete(ip);
+          issueSession(res);
+          send(res, 200, { ok: true });
+        });
+      }
       if (req.method === 'POST' && url.pathname === '/api/logout') {
         await readJSON(req);
         sessions.delete(session.key);
@@ -175,6 +210,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const bridge = new CodexConnection({ url: process.env.CODEX_WS_URL, token: process.env.CODEX_API_TOKEN });
     const server = await createWebServer({
       password: process.env.CODEX_WEB_PASSWORD,
+      authStateFile: process.env.AUTH_STATE_FILE || '/data/auth.json',
       bridge,
       hostLabel: process.env.HOST_LABEL || 'Codex',
       projects: JSON.parse(process.env.CODEX_PROJECTS || '[]'),
