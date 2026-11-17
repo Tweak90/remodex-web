@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#172522">
+  <title>remodex-web · Codex im Browser</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <section id="login" class="login-view" hidden>
+    <form id="login-form" class="login-card">
+      <div class="brand-mark" aria-hidden="true">r</div>
+      <p class="eyebrow">DEIN ZUGANG ZU CODEX</p>
+      <h1>Dein Codex. Im Browser.</h1>
+      <p>Deine Projekte. Deine Gespräche.<br>Deine bestehende Codex-Umgebung.</p>
+      <label for="password">Passwort</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button type="submit" class="primary">Umgebung öffnen <span aria-hidden="true">↗</span></button>
+      <p id="login-error" class="form-error" role="alert"></p>
+      <small>Eigenständiger Fork von Remodex. Mit deiner Codex-Umgebung verbunden.</small>
+    </form>
+  </section>
+  <div id="app" class="shell" hidden>
+    <aside id="sidebar" class="sidebar" aria-label="Projekte und Gespräche">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">r</span><div><strong>remodex-web</strong><small>CODEX COMPANION</small></div><button id="close-sidebar" class="icon-button mobile-only" aria-label="Navigation schließen">×</button></div>
+      <button id="new-chat" class="new-chat"><span aria-hidden="true">＋</span> Neues Gespräch <span class="shortcut" aria-hidden="true">↗</span></button>
+      <div class="section-label"><span>ARBEITSBEREICH</span></div>
+      <label class="sr-only" for="project">Projekt für neue Gespräche</label>
+      <div class="project-wrap"><span aria-hidden="true">◇</span><select id="project"><option value="">Projekt wählen …</option></select></div>
+      <div class="section-label conversation-label"><span>GESPRÄCHE</span><button id="refresh" class="icon-button" aria-label="Gespräche aktualisieren" title="Aktualisieren">↻</button></div>
+      <nav id="threads" class="threads" aria-label="Gespräche"></nav>
+      <button id="load-more" class="load-more" hidden>Weitere Gespräche laden</button>
+      <div class="sidebar-footer"><div class="user-avatar" aria-hidden="true">S</div><div><strong>Deine Codex-Umgebung</strong><small id="host-label">Verbindung wird hergestellt</small></div><button id="logout" class="icon-button" aria-label="Abmelden" title="Abmelden">⇥</button></div>
+    </aside>
+    <button id="sidebar-shade" class="sidebar-shade" aria-label="Navigation schließen" hidden></button>
+    <main class="main">
+      <header class="topbar"><div class="thread-heading"><button id="open-sidebar" class="icon-button mobile-only" aria-label="Navigation öffnen">☰</button><span class="breadcrumb">Arbeitsraum <span aria-hidden="true">/</span></span><h1 id="thread-title">Neues Gespräch</h1></div><div id="connection" class="connection" role="status"><span class="status-dot"></span><span id="connection-text">Verbinden …</span></div></header>
+      <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="dismiss-notice" class="icon-button" aria-label="Meldung schließen">×</button></div>
+      <div id="messages" class="messages" aria-live="polite" aria-relevant="additions text">
+        <section id="welcome" class="welcome"><div class="welcome-symbol" aria-hidden="true">✳</div><p class="eyebrow">EIN ORT FÜR DEINE IDEEN</p><h2>Was nehmen wir<br>heute in die Hand?</h2><p>Stelle eine Frage, öffne ein Gespräch oder<br>arbeite mit Codex an deinem nächsten Projekt.</p><div class="welcome-details"><span><span class="detail-dot"></span> Bestehende Umgebung</span><span>Projekte & Verlauf</span><span>Antworten in Echtzeit</span></div></section>
+      </div>
+      <div class="composer-area"><div id="run-state" class="run-state" role="status" hidden><span class="pulse-dot"></span><span>Codex arbeitet …</span></div><form id="composer" class="composer"><label class="sr-only" for="prompt">Nachricht an Codex</label><textarea id="prompt" placeholder="Was möchtest du mit Codex angehen?" rows="2" required></textarea><div class="composer-bottom"><span id="composer-context">Wähle links ein Projekt für ein neues Gespräch.</span><button id="stop" type="button" class="stop-button" hidden><span aria-hidden="true">■</span> Anhalten</button><button id="send" type="submit" class="send-button" aria-label="Nachricht senden" title="Senden (Enter)">↑</button></div></form><p class="composer-hint"><span>Enter zum Senden · Shift + Enter für einen Absatz</span><span>remodex-web · eigenständiger Fork</span></p></div>
+    </main>
+  </div>
+</body>
+</html>

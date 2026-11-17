@@ -2,7 +2,33 @@
   <img src="CodexMobile/CodexMobile/Assets.xcassets/remodex-og1.imageset/remodex-og2%20%281%29.png" alt="Remodex" />
 </p>
 
-# Remodex
+<!-- Modified by the remodex-web fork: browser deployment introduction added. -->
+# remodex-web
+
+A self-hosted browser interface for an **existing Codex environment**, forked
+from [ESCANOR-001/remodex](https://github.com/ESCANOR-001/remodex).
+
+The added web client provides project selection, existing conversations,
+streaming replies, interruption, and approval/question handling. It connects
+server-side to your existing authenticated Codex WebSocket gateway; execution,
+tools, projects, and history stay on that Codex machine. No additional Codex
+runtime or OpenAI login is created in Docker.
+
+See [Docker setup](Docs/docker.md). The default local URL is
+`http://localhost:7878`. Gateway credentials and the browser login password
+belong exclusively in private runtime configuration, never in source, build
+arguments, or image layers.
+
+The browser interface uses its own text branding and assets. This is an
+independent fork, not an official Remodex or OpenAI product. Apache-2.0 and
+the original attribution are retained. Unrelated extracted desktop bundles
+have been removed from this fork's current source tree and are excluded from
+the image. The original mobile sources and documentation follow below for
+upstream context; iOS, relay, and the mobile bridge are not used by the web client.
+
+---
+
+# Remodex (upstream documentation)
 
 [![npm version](https://img.shields.io/npm/v/remodex)](https://www.npmjs.com/package/remodex)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)

@@ -1,0 +1,18 @@
+{
+  "name": "remodex-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted browser client for an existing Codex environment",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ws": "8.23.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

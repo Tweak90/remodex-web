@@ -1,0 +1,14 @@
+# Only browser runtime sources and license enter the build context.
+**
+!Dockerfile.web
+!LICENSE
+!web/
+!web/**
+web/node_modules/
+web/.env
+web/.env.*
+web/*.log
+web/coverage/
+web/test/
+web/tests/
+web/**/*.test.js
