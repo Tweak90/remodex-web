@@ -222,7 +222,24 @@ function projectForThread(thread) {
   return state.projects.find((project) => thread.cwd === project.path);
 }
 
+function setHistoryPane(scope) {
+  for (const name of ['project', 'unassigned']) {
+    const nav = $(`${name}-threads`);
+    const button = $(`${name}-threads-label`);
+    const expanded = name === scope;
+    if (!nav.hidden && !expanded) state.panes[name].savedScroll = nav.scrollTop;
+    button.setAttribute('aria-expanded', String(expanded));
+    button.closest('.thread-section').classList.toggle('is-collapsed', !expanded);
+    nav.hidden = !expanded;
+    $(`${name}-threads-status`).hidden = !expanded;
+    if (expanded) requestAnimationFrame(() => {
+      nav.scrollTop = state.panes[name].savedScroll || 0;
+    });
+  }
+}
+
 function setProject(project) {
+  setHistoryPane('project');
   if (state.project === project) return;
   state.project = project;
   $('project').value = project;
@@ -888,6 +905,7 @@ $('dismiss-notice').addEventListener('click', () => { $('notice').hidden = true;
 $('new-chat').addEventListener('click', newChat);
 for (const scope of ['project', 'unassigned']) {
   const nav = $(`${scope}-threads`);
+  $(`${scope}-threads-label`).addEventListener('click', () => setHistoryPane(scope));
   const pane = state.panes[scope];
   const moreOnUserScroll = () => {
     if (!pane.scrollIntent || Date.now() - pane.scrollIntent > 1200) return;
@@ -897,7 +915,10 @@ for (const scope of ['project', 'unassigned']) {
     }
   };
   $(`refresh-${scope}`).addEventListener('click', () => loadPane(scope));
-  nav.addEventListener('scroll', moreOnUserScroll, { passive: true });
+  nav.addEventListener('scroll', () => {
+    if (!nav.hidden) pane.savedScroll = nav.scrollTop;
+    moreOnUserScroll();
+  }, { passive: true });
   nav.addEventListener('wheel', (event) => {
     if (event.deltaY > 0) { pane.scrollIntent = Date.now(); requestAnimationFrame(moreOnUserScroll); }
   }, { passive: true });

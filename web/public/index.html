@@ -32,14 +32,14 @@
       <div class="project-wrap"><span aria-hidden="true">◇</span><select id="project"><option value="">Projekt wählen …</option></select></div>
       <div class="thread-sections">
         <section class="thread-section" aria-labelledby="project-threads-label">
-          <div class="section-label conversation-label"><span id="project-threads-label">PROJEKTGESPRÄCHE</span><button id="refresh-project" class="icon-button" aria-label="Projektgespräche aktualisieren" title="Aktualisieren">↻</button></div>
+          <div class="section-label conversation-label"><button id="project-threads-label" class="history-toggle" type="button" aria-expanded="true" aria-controls="project-threads">PROJEKTGESPRÄCHE</button><button id="refresh-project" class="icon-button" aria-label="Projektgespräche aktualisieren" title="Aktualisieren">↻</button></div>
           <nav id="project-threads" class="threads" aria-label="Gespräche des gewählten Projekts" tabindex="0"></nav>
           <p id="project-threads-status" class="thread-status" role="status"></p>
         </section>
-        <section class="thread-section" aria-labelledby="unassigned-threads-label">
-          <div class="section-label conversation-label"><span id="unassigned-threads-label">OHNE PROJEKT</span><button id="refresh-unassigned" class="icon-button" aria-label="Gespräche ohne Projekt aktualisieren" title="Aktualisieren">↻</button></div>
-          <nav id="unassigned-threads" class="threads" aria-label="Gespräche ohne Projekt" tabindex="0"></nav>
-          <p id="unassigned-threads-status" class="thread-status" role="status"></p>
+        <section class="thread-section is-collapsed" aria-labelledby="unassigned-threads-label">
+          <div class="section-label conversation-label"><button id="unassigned-threads-label" class="history-toggle" type="button" aria-expanded="false" aria-controls="unassigned-threads">OHNE PROJEKT</button><button id="refresh-unassigned" class="icon-button" aria-label="Gespräche ohne Projekt aktualisieren" title="Aktualisieren">↻</button></div>
+          <nav id="unassigned-threads" hidden class="threads" aria-label="Gespräche ohne Projekt" tabindex="0"></nav>
+          <p id="unassigned-threads-status" hidden class="thread-status" role="status"></p>
         </section>
       </div>
       <div class="sidebar-footer"><div class="user-avatar" aria-hidden="true">S</div><div><strong>Deine Codex-Umgebung</strong><small id="host-label">Verbindung wird hergestellt</small></div><div class="footer-actions"><button id="change-password" class="password-button" type="button" aria-label="Passwort ändern" title="Passwort ändern"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="9" r="4"></circle><path d="m11 12 8 8m-3-3 2-2m-5-1 2-2"></path></svg><span>Passwort ändern</span></button><button id="logout" class="icon-button" aria-label="Abmelden" title="Abmelden">⇥</button></div></div>
