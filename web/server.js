@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { CodexConnection } from './codex.js';
+import { createCatalog, readRuntime, sanitizeUsage } from './catalog.js';
 
 const allowedMethods = new Set([
   'thread/list', 'thread/read', 'thread/start', 'thread/resume',
@@ -16,6 +17,7 @@ const sessionDuration = 24 * 60 * 60 * 1000;
 export async function createWebServer({ password, bridge, hostLabel = 'Codex', projects = [], secureCookie = false } = {}) {
   if (typeof password !== 'string' || password.length < 12) throw new Error('CODEX_WEB_PASSWORD must contain at least 12 characters');
   const expectedPassword = hash(password);
+  const catalog = createCatalog({ bridge, projects });
   const sessions = new Map();
   const attempts = new Map();
   const events = new Map();
@@ -60,7 +62,9 @@ export async function createWebServer({ password, bridge, hostLabel = 'Codex', p
     catch { throw problem(400, 'Ungültiges JSON'); }
   };
   const broadcast = (message) => {
-    const chunk = `data: ${JSON.stringify(message)}\n\n`;
+    const safeMessage = ['account/rateLimits/updated', 'account/rate_limits/updated'].includes(message.method)
+      ? { method: message.method, params: sanitizeUsage(message.params) } : message;
+    const chunk = `data: ${JSON.stringify(safeMessage)}\n\n`;
     for (const [res, { key, expires }] of events) {
       if (!sessions.has(key) || expires < Date.now()) { res.end(); events.delete(res); }
       else if (res.writableLength > 2 * 1024 * 1024) { res.destroy(); events.delete(res); }
@@ -126,13 +130,12 @@ export async function createWebServer({ password, bridge, hostLabel = 'Codex', p
         return send(res, 200, { ...bridge.status, authenticated: true, hostLabel });
       if (req.method === 'GET' && url.pathname === '/api/requests')
         return send(res, 200, { requests: [...bridge.requests.values()] });
-      if (req.method === 'GET' && url.pathname === '/api/projects') {
-        const known = new Map(projects.map(p => [p.path, p]));
-        const result = await bridge.call('thread/list', { limit: 100 });
-        for (const thread of result.data || []) if (thread.cwd && !known.has(thread.cwd))
-          known.set(thread.cwd, { name: thread.cwd.split('/').filter(Boolean).at(-1), path: thread.cwd });
-        return send(res, 200, { projects: [...known.values()] });
-      }
+      if (req.method === 'GET' && url.pathname === '/api/projects')
+        return send(res, 200, { projects: await catalog.readProjects() });
+      if (req.method === 'GET' && url.pathname === '/api/runtime')
+        return send(res, 200, await readRuntime(bridge));
+      if (req.method === 'GET' && url.pathname === '/api/threads')
+        return send(res, 200, await catalog.listThreads(url.searchParams, session.key));
       if (req.method === 'GET' && url.pathname === '/api/events') {
         if (events.size >= 50) throw problem(429, 'Zu viele offene Verbindungen');
         res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });

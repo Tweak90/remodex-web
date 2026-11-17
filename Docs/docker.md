@@ -22,8 +22,19 @@ The login password must contain at least 12 characters. Browser sessions expire
 after 24 hours and are invalidated when the container restarts. `COOKIE_SECURE=true`
 requires HTTPS and adds the Secure cookie flag. `HOST_LABEL` is an optional display
 name; `CODEX_PROJECTS` is an optional JSON array of `{ "name", "path" }` entries
-referring to directories on the existing Codex machine. Paths observed in thread
-history are also offered automatically; project selection does not filter history.
+referring to directories on the existing Codex machine. The selector combines
+configured projects with projects returned by Codex. The upper conversation list
+is filtered to the selected project; the independent lower list contains chats
+without a project. Each starts with ten conversations and loads five more only
+when you scroll. Metadata pages are filtered on the server before they reach the
+browser, so older matching chats remain reachable.
+
+The composer offers the models and reasoning efforts reported by the existing
+Codex environment. Opening a conversation restores its current model and effort;
+your selection applies to the next message. Available speed tiers come from the
+selected model. Remaining usage shows the account's reported usage windows and
+reset times; unavailable data is not replaced with an estimate. Changing these
+controls does not edit the machine's global Codex configuration.
 
 These values belong in the private runtime environment, never in Git or in an
 image. Then run:

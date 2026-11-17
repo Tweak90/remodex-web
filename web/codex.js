@@ -90,7 +90,7 @@ export class CodexConnection extends EventEmitter {
         ws.once('close', () => reject(new Error('Gateway nicht erreichbar')));
       });
       await this.raw('initialize', {
-        clientInfo: { name: 'remodex_web', title: 'remodex-web', version: '0.1.0' },
+        clientInfo: { name: 'remodex_web', title: 'remodex-web', version: '0.2.0' },
         capabilities: { experimentalApi: true },
       }, 15000);
       ws.send(JSON.stringify({ method: 'initialized', params: {} }));

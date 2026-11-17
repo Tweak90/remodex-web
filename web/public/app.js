@@ -3,7 +3,13 @@
 
 const $ = (id) => document.getElementById(id);
 const state = {
-  threads: [], cursor: null, thread: null, project: '', connected: false,
+  thread: null, project: '', projects: [], connected: false,
+  panes: {
+    project: { items: [], cursor: null, loading: false, version: 0, initialized: false },
+    unassigned: { items: [], cursor: null, loading: false, version: 0, initialized: false },
+  },
+  runtime: { models: [], defaults: {}, usage: null },
+  settings: { model: '', effort: '', serviceTier: 'default' }, settingsReady: false,
   running: false, turnId: null, items: new Map(), source: null,
   opening: false, sending: false, loadVersion: 0, requests: new Map(),
   completedTurns: new Set(), completionVersions: new Map(),
@@ -54,8 +60,9 @@ function setConnection(connected, label) {
   updateComposer();
   if (reconnected && !$('app').hidden) {
     void reconcileThread();
-    void loadThreads();
+    void refreshThreads();
     void loadRequests();
+    void loadRuntime();
   }
 }
 
@@ -72,7 +79,8 @@ async function init() {
     $('login').hidden = true;
     $('app').hidden = false;
     connectEvents();
-    await Promise.all([loadProjects(), loadThreads()]);
+    await Promise.all([loadProjects(), loadRuntime()]);
+    await Promise.all([loadPane('project', 'reset'), loadPane('unassigned', 'reset')]);
     await loadRequests();
     const selected = new URL(location.href).searchParams.get('thread');
     if (selected && !state.thread) await openThread(selected);
@@ -86,8 +94,9 @@ async function loadProjects() {
   try {
     const result = await api('/api/projects');
     const previous = $('project').value || state.project;
+    state.projects = result.projects || [];
     $('project').replaceChildren(new Option('Projekt wählen …', ''));
-    for (const project of result.projects || []) {
+    for (const project of state.projects) {
       $('project').add(new Option(project.name || baseName(project.path), project.path));
     }
     if (previous && ![...$('project').options].some((option) => option.value === previous)) {
@@ -106,29 +115,86 @@ function isRunning(status) {
   return ['inProgress', 'running', 'active', 'busy'].includes(value);
 }
 
-async function loadThreads(append = false) {
-  $('refresh').disabled = true;
-  try {
-    const result = await rpc('thread/list', {
-      limit: 50, sortKey: 'updated_at', ...(append && state.cursor ? { cursor: state.cursor } : {}),
-    });
-    const threads = result.data || result.threads || [];
-    state.threads = append ? [...state.threads, ...threads.filter((t) => !state.threads.some((old) => old.id === t.id))] : threads;
-    state.cursor = result.nextCursor || null;
-    renderThreads();
-  } catch (error) { notice(error); }
-  finally { $('refresh').disabled = false; }
+function allThreads() { return [...state.panes.project.items, ...state.panes.unassigned.items]; }
+
+async function fetchThreadPage(scope, project, limit, cursor) {
+  const query = new URLSearchParams({ scope, limit: String(limit) });
+  if (project) query.set('project', project);
+  if (cursor) query.set('cursor', cursor);
+  return api(`/api/threads?${query}`);
 }
 
-function renderThreads() {
-  $('threads').replaceChildren();
-  if (!state.threads.length) {
+async function loadPane(scope, mode = 'refresh') {
+  const pane = state.panes[scope];
+  const nav = $(`${scope}-threads`);
+  if (mode === 'more' && (pane.loading || !pane.cursor)) return;
+  if (mode === 'refresh' && pane.loading) return;
+  const version = ++pane.version;
+  const project = scope === 'project' ? state.project : '';
+  const oldScroll = mode === 'reset' ? 0 : nav.scrollTop;
+  const targetCount = mode === 'reset' ? 10 : Math.max(10, pane.items.length);
+  if (mode === 'reset') { pane.items = []; pane.cursor = null; pane.initialized = false; }
+  if (scope === 'project' && !project) {
+    pane.loading = false;
+    pane.initialized = true;
+    renderPane(scope);
+    return;
+  }
+  pane.loading = true;
+  renderPaneStatus(scope);
+  try {
+    let result;
+    let items;
+    if (mode === 'more') {
+      result = await fetchThreadPage(scope, project, 5, pane.cursor);
+      items = [...pane.items];
+      for (const thread of result.data || []) if (!items.some((item) => item.id === thread.id)) items.push(thread);
+    } else {
+      result = await fetchThreadPage(scope, project, 10);
+      items = [...(result.data || [])];
+      // Refresh only the pages the user already opened; this never grows the visible window.
+      while (items.length < targetCount && result.nextCursor) {
+        if (version !== pane.version || project !== (scope === 'project' ? state.project : '')) return;
+        result = await fetchThreadPage(scope, project, 5, result.nextCursor);
+        items.push(...(result.data || []));
+      }
+    }
+    if (version !== pane.version || project !== (scope === 'project' ? state.project : '')) return;
+    pane.items = items;
+    pane.cursor = result.nextCursor || null;
+    pane.initialized = true;
+    renderPane(scope);
+    nav.scrollTop = oldScroll;
+  } catch (error) {
+    if (version === pane.version) notice(error);
+  } finally {
+    if (version === pane.version) { pane.loading = false; renderPaneStatus(scope); }
+  }
+}
+
+function refreshThreads() { return Promise.all([loadPane('project'), loadPane('unassigned')]); }
+
+function renderPaneStatus(scope) {
+  const pane = state.panes[scope];
+  $(`refresh-${scope}`).disabled = pane.loading;
+  $(`${scope}-threads-status`).textContent = pane.loading ? 'Wird geladen …' : pane.cursor ? 'Für weitere Gespräche nach unten scrollen' : '';
+}
+
+function renderPane(scope) {
+  const pane = state.panes[scope];
+  const nav = $(`${scope}-threads`);
+  const previousScroll = nav.scrollTop;
+  pane.scrollIntent = 0;
+  nav.replaceChildren();
+  if (!pane.items.length) {
     const empty = document.createElement('p');
     empty.className = 'thread-empty';
-    empty.textContent = 'Hier erscheinen deine Gespräche aus der bestehenden Codex-Umgebung.';
-    $('threads').append(empty);
+    empty.textContent = scope === 'project' && !state.project
+      ? 'Wähle ein Projekt, um seine Gespräche zu sehen.'
+      : pane.initialized ? scope === 'project' ? 'In diesem Projekt gibt es noch keine Gespräche.' : 'Keine Gespräche ohne Projekt.' : 'Gespräche werden geladen …';
+    nav.append(empty);
   }
-  for (const thread of state.threads) {
+  for (const thread of pane.items) {
     const button = document.createElement('button');
     button.className = `thread${state.thread?.id === thread.id ? ' active' : ''}`;
     button.title = threadName(thread);
@@ -142,9 +208,215 @@ function renderThreads() {
     meta.textContent = [baseName(thread.cwd), date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) : null].filter(Boolean).join(' · ');
     button.append(name, meta);
     button.addEventListener('click', () => openThread(thread.id));
-    $('threads').append(button);
+    nav.append(button);
   }
-  $('load-more').hidden = !state.cursor;
+  nav.scrollTop = previousScroll;
+  renderPaneStatus(scope);
+}
+
+function renderThreads() { renderPane('project'); renderPane('unassigned'); }
+
+function projectForThread(thread) {
+  if (thread.projectId) return state.projects.find((project) => project.id === thread.projectId);
+  return state.projects.find((project) => thread.cwd === project.path);
+}
+
+function setProject(project) {
+  if (state.project === project) return;
+  state.project = project;
+  $('project').value = project;
+  void loadPane('project', 'reset');
+  updateComposer();
+}
+
+const effortLabels = { none: 'Ohne', minimal: 'Minimal', low: 'Niedrig', medium: 'Mittel', high: 'Hoch', xhigh: 'Sehr hoch', max: 'Maximum', ultra: 'Ultra' };
+
+function selectedModel() {
+  return state.runtime.models.find((model) => model.model === state.settings.model || model.id === state.settings.model);
+}
+
+function resetRuntimeSettings() {
+  const defaults = state.runtime.defaults || {};
+  const model = state.runtime.models.find((item) => item.model === defaults.model || item.id === defaults.model)
+    || state.runtime.models.find((item) => item.isDefault) || state.runtime.models[0];
+  state.settings = {
+    model: defaults.model || model?.model || model?.id || '',
+    effort: defaults.effort || defaults.reasoningEffort || model?.defaultReasoningEffort || '',
+    serviceTier: defaults.serviceTier || 'default',
+  };
+  renderRuntimeControls();
+  renderUsage();
+}
+
+function applyThreadSettings(response) {
+  const thread = response.thread || response;
+  const defaults = state.runtime.defaults || {};
+  state.settings.model = response.model || thread.model || defaults.model || state.settings.model;
+  const model = selectedModel();
+  state.settings.effort = response.reasoningEffort || response.effort || thread.reasoningEffort
+    || defaults.effort || defaults.reasoningEffort || model?.defaultReasoningEffort || '';
+  state.settings.serviceTier = response.serviceTier || thread.serviceTier || 'default';
+  renderRuntimeControls();
+  renderUsage();
+}
+
+async function loadRuntime() {
+  try {
+    const result = await api('/api/runtime');
+    state.runtime.models = Array.isArray(result.models) ? result.models : result.models?.data || [];
+    state.runtime.defaults = result.defaults || {};
+    state.runtime.usage = result.usage || null;
+    state.runtime.updatedAt = Date.now();
+    if (!state.settingsReady) {
+      resetRuntimeSettings();
+      state.settingsReady = true;
+    } else {
+      renderRuntimeControls();
+      renderUsage();
+    }
+    updateComposer();
+  } catch (error) {
+    if (!state.runtime.usage) {
+      $('usage-content').replaceChildren();
+      const text = document.createElement('p');
+      text.textContent = 'Kontingentdaten sind momentan nicht verfügbar.';
+      $('usage-content').append(text);
+    }
+    if (!state.settingsReady) {
+      $('model').replaceChildren(new Option('Modell nicht verfügbar', ''));
+      $('effort').replaceChildren(new Option('Denkgrad nicht verfügbar', ''));
+    }
+  }
+}
+
+function renderRuntimeControls() {
+  const modelSelect = $('model');
+  const models = state.runtime.models.filter((model) => !model.hidden || model.model === state.settings.model || model.id === state.settings.model);
+  modelSelect.replaceChildren();
+  for (const model of models) modelSelect.add(new Option(model.displayName || model.model || model.id, model.model || model.id));
+  if (state.settings.model && ![...modelSelect.options].some((option) => option.value === state.settings.model))
+    modelSelect.add(new Option(state.settings.model, state.settings.model));
+  if (!modelSelect.options.length) modelSelect.add(new Option('Umgebungsstandard', ''));
+  modelSelect.value = state.settings.model;
+  const model = selectedModel();
+  const effortSelect = $('effort');
+  const supported = model?.supportedReasoningEfforts || [];
+  effortSelect.replaceChildren();
+  for (const item of supported) {
+    const option = new Option(effortLabels[item.reasoningEffort] || item.reasoningEffort, item.reasoningEffort);
+    option.title = item.description || '';
+    effortSelect.add(option);
+  }
+  if (state.settings.effort && ![...effortSelect.options].some((option) => option.value === state.settings.effort))
+    effortSelect.add(new Option(effortLabels[state.settings.effort] || state.settings.effort, state.settings.effort));
+  if (!effortSelect.options.length) effortSelect.add(new Option('Umgebungsstandard', ''));
+  effortSelect.value = state.settings.effort;
+  const tierSelect = $('service-tier');
+  tierSelect.replaceChildren(new Option('Standard', 'default'));
+  for (const tier of model?.serviceTiers || []) {
+    if (tier.id === 'default') continue;
+    const option = new Option(tier.id === 'priority' ? 'Fast' : tier.name || tier.id, tier.id);
+    option.title = tier.description || '';
+    tierSelect.add(option);
+  }
+  if (state.settings.serviceTier !== 'default' && ![...tierSelect.options].some((option) => option.value === state.settings.serviceTier))
+    tierSelect.add(new Option(state.settings.serviceTier === 'priority' ? 'Fast' : state.settings.serviceTier, state.settings.serviceTier));
+  tierSelect.value = state.settings.serviceTier;
+  $('service-tier-label').hidden = tierSelect.options.length < 2;
+  updateComposer();
+}
+
+function quotaWindowLabel(window) {
+  const minutes = Number(window.windowDurationMins);
+  if (!minutes) return 'Nutzungsfenster';
+  if (minutes === 10080) return 'Woche';
+  if (minutes % 1440 === 0) return `${minutes / 1440} Tage`;
+  if (minutes % 60 === 0) return `${minutes / 60} Stunden`;
+  return `${minutes} Minuten`;
+}
+
+function usageSnapshots() {
+  const usage = state.runtime.usage;
+  if (!usage) return [];
+  const candidates = [usage.rateLimits, ...Object.values(usage.rateLimitsByLimitId || {})].filter(Boolean);
+  const snapshots = [];
+  const seen = new Set();
+  for (const snapshot of candidates) {
+    const key = snapshot.limitId || JSON.stringify([snapshot.limitName, snapshot.primary, snapshot.secondary]);
+    if (!seen.has(key)) { snapshots.push(snapshot); seen.add(key); }
+  }
+  return snapshots;
+}
+
+function updateUsage(params) {
+  const usage = state.runtime.usage || {};
+  if (params.rateLimits) {
+    const limit = params.rateLimits;
+    usage.rateLimits = limit;
+    if (limit.limitId) usage.rateLimitsByLimitId = { ...usage.rateLimitsByLimitId, [limit.limitId]: limit };
+  }
+  if (typeof params.ordinaryUsageAllowed === 'boolean') usage.ordinaryUsageAllowed = params.ordinaryUsageAllowed;
+  if (params.rateLimitsByLimitId) usage.rateLimitsByLimitId = { ...usage.rateLimitsByLimitId, ...params.rateLimitsByLimitId };
+  state.runtime.usage = usage;
+  state.runtime.updatedAt = Date.now();
+  renderUsage();
+}
+
+function renderUsage() {
+  const content = $('usage-content');
+  content.replaceChildren();
+  const snapshots = usageSnapshots();
+  let windowCount = 0;
+  const primarySnapshot = snapshots.find((snapshot) => snapshot.normalModelSlug === state.settings.model)
+    || snapshots.find((snapshot) => snapshot.primary || snapshot.secondary);
+  const summaryWindow = primarySnapshot?.primary || primarySnapshot?.secondary;
+  $('usage-summary').textContent = summaryWindow && Number.isFinite(summaryWindow.usedPercent)
+    ? `${Math.max(0, Math.min(100, 100 - summaryWindow.usedPercent))} % frei` : 'Kontingent';
+  for (const snapshot of snapshots) {
+    const windows = [snapshot.primary, snapshot.secondary].filter((window) => window && Number.isFinite(window.usedPercent));
+    if (!windows.length) continue;
+    const group = document.createElement('section');
+    group.className = 'quota-group';
+    if (snapshots.length > 1 || snapshot.limitName) {
+      const heading = document.createElement('h3');
+      heading.textContent = snapshot.limitName || snapshot.normalModelSlug || 'Codex';
+      group.append(heading);
+    }
+    for (const window of windows) {
+      windowCount++;
+      const remaining = Math.max(0, Math.min(100, 100 - window.usedPercent));
+      const row = document.createElement('div');
+      row.className = 'quota-window';
+      const label = document.createElement('span');
+      label.textContent = quotaWindowLabel(window);
+      const percent = document.createElement('strong');
+      percent.textContent = `${remaining} % verbleibend`;
+      const meter = document.createElement('meter');
+      meter.min = 0; meter.max = 100; meter.value = remaining;
+      meter.setAttribute('aria-label', `${quotaWindowLabel(window)}: ${remaining} Prozent verbleibend`);
+      const reset = document.createElement('small');
+      if (Number.isFinite(window.resetsAt)) {
+        const date = new Date(window.resetsAt * (window.resetsAt > 1e12 ? 1 : 1000));
+        reset.textContent = `Erneuert am ${date.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+      } else reset.textContent = 'Zeitpunkt der Erneuerung nicht verfügbar';
+      row.append(label, percent, meter, reset);
+      group.append(row);
+    }
+    content.append(group);
+  }
+  if (!windowCount) {
+    const unavailable = document.createElement('p');
+    unavailable.textContent = 'Die Codex-Umgebung liefert momentan keine Kontingentdaten.';
+    content.append(unavailable);
+  }
+  if (state.runtime.usage?.ordinaryUsageAllowed === false) {
+    const limited = document.createElement('p');
+    limited.className = 'quota-warning';
+    limited.textContent = 'Die reguläre Nutzung ist laut Codex derzeit eingeschränkt.';
+    content.append(limited);
+  }
+  $('usage-updated').textContent = state.runtime.updatedAt
+    ? `Stand ${new Date(state.runtime.updatedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · Angaben aus deiner Codex-Umgebung` : '';
 }
 
 function updateComposer() {
@@ -153,6 +425,7 @@ function updateComposer() {
   $('stop').hidden = !state.running;
   $('run-state').hidden = !state.running;
   $('composer-context').textContent = state.thread?.cwd || state.project || 'Wähle links ein Projekt für ein neues Gespräch.';
+  for (const id of ['model', 'effort', 'service-tier']) $(id).disabled = state.sending || state.opening || !state.settingsReady;
   $('prompt').placeholder = state.running ? 'Codex arbeitet. Du kannst schon deine nächste Nachricht vorbereiten.' : 'Was möchtest du mit Codex angehen?';
 }
 
@@ -169,11 +442,8 @@ function clearMessages() {
 
 function syncThread(thread) {
   state.thread = thread;
-  state.project = thread.cwd || state.project;
-  if (thread.cwd && ![...$('project').options].some((option) => option.value === thread.cwd)) {
-    $('project').add(new Option(baseName(thread.cwd), thread.cwd));
-  }
-  $('project').value = state.project;
+  const project = projectForThread(thread);
+  if (project && project.path !== state.project) setProject(project.path);
   $('thread-title').textContent = threadName(thread);
   const turns = thread.turns || [];
   const running = [...turns].reverse().find((turn) => isRunning(turn.status));
@@ -196,6 +466,7 @@ async function openThread(id) {
     const read = await rpc('thread/read', { threadId: id, includeTurns: true });
     if (version !== state.loadVersion) return;
     syncThread(read.thread || resumed.thread);
+    applyThreadSettings(resumed);
     const url = new URL(location.href);
     url.searchParams.set('thread', id);
     history.replaceState({}, '', url);
@@ -273,7 +544,12 @@ async function sendMessage(event) {
   try {
     if (!state.thread) {
       if (!state.project) throw new Error('Wähle zuerst links ein Projekt aus.');
-      const created = await rpc('thread/start', { cwd: state.project });
+      const created = await rpc('thread/start', {
+        cwd: state.project,
+        ...(state.settings.model ? { model: state.settings.model } : {}),
+        ...(state.settings.effort ? { config: { model_reasoning_effort: state.settings.effort } } : {}),
+        serviceTier: state.settings.serviceTier,
+      });
       if (sendVersion !== state.loadVersion) return;
       state.thread = created.thread;
       if (!state.thread?.id) throw new Error('Codex hat kein Gespräch zurückgegeben.');
@@ -281,14 +557,18 @@ async function sendMessage(event) {
       const url = new URL(location.href);
       url.searchParams.set('thread', state.thread.id);
       history.replaceState({}, '', url);
-      state.threads.unshift(state.thread);
-      renderThreads();
+      void loadPane('project');
     }
     optimisticId = `optimistic:${Date.now()}`;
     renderItem({ id: optimisticId, type: 'userMessage', content: [{ type: 'text', text }], _optimistic: true });
     const threadId = state.thread.id;
     const completionVersion = state.completionVersions.get(threadId) || 0;
-    const result = await rpc('turn/start', { threadId, input: [{ type: 'text', text }] });
+    const result = await rpc('turn/start', {
+      threadId, input: [{ type: 'text', text }],
+      ...(state.settings.model ? { model: state.settings.model } : {}),
+      ...(state.settings.effort ? { effort: state.settings.effort } : {}),
+      serviceTier: state.settings.serviceTier,
+    });
     if (sendVersion !== state.loadVersion || state.thread?.id !== threadId) return;
     $('prompt').value = '';
     $('prompt').style.height = '';
@@ -335,6 +615,7 @@ function newChat() {
   state.loadVersion++;
   state.opening = false;
   state.thread = null;
+  resetRuntimeSettings();
   setRunning(false);
   clearMessages();
   $('welcome').hidden = false;
@@ -386,7 +667,7 @@ function handleEvent(event) {
     return;
   }
   if (method === 'thread/name/updated') {
-    const thread = state.threads.find((candidate) => candidate.id === params.threadId);
+    const thread = allThreads().find((candidate) => candidate.id === params.threadId);
     if (thread) thread.name = params.threadName || params.name;
     if (state.thread?.id === params.threadId) {
       state.thread.name = params.threadName || params.name;
@@ -394,7 +675,12 @@ function handleEvent(event) {
     }
     renderThreads();
   }
+  if (['account/rateLimits/updated', 'account/rate_limits/updated'].includes(method)) {
+    updateUsage(params);
+    return;
+  }
   if (method === 'turn/completed' && params.threadId) {
+    void loadRuntime();
     state.completionVersions.set(params.threadId, (state.completionVersions.get(params.threadId) || 0) + 1);
     if (state.completionVersions.size > 200) state.completionVersions.delete(state.completionVersions.keys().next().value);
     const completedId = params.turn?.id || params.turnId;
@@ -412,7 +698,7 @@ function handleEvent(event) {
     setRunning(false);
     if (params.turn?.error) notice(params.turn.error.message || params.turn.error);
     void reconcileThread();
-    void loadThreads();
+    void refreshThreads();
   }
   if (method === 'thread/status/changed' && params.status) setRunning(isRunning(params.status));
   if (method === 'item/started' || method === 'item/completed') {
@@ -538,9 +824,53 @@ $('close-sidebar').addEventListener('click', closeSidebar);
 $('sidebar-shade').addEventListener('click', closeSidebar);
 $('dismiss-notice').addEventListener('click', () => { $('notice').hidden = true; });
 $('new-chat').addEventListener('click', newChat);
-$('refresh').addEventListener('click', () => loadThreads());
-$('load-more').addEventListener('click', () => loadThreads(true));
-$('project').addEventListener('change', () => { state.project = $('project').value; if (state.thread) newChat(); updateComposer(); });
+for (const scope of ['project', 'unassigned']) {
+  const nav = $(`${scope}-threads`);
+  const pane = state.panes[scope];
+  const moreOnUserScroll = () => {
+    if (!pane.scrollIntent || Date.now() - pane.scrollIntent > 1200) return;
+    if (nav.scrollTop > 0 && nav.scrollHeight - nav.clientHeight - nav.scrollTop < 35) {
+      pane.scrollIntent = 0;
+      void loadPane(scope, 'more');
+    }
+  };
+  $(`refresh-${scope}`).addEventListener('click', () => loadPane(scope));
+  nav.addEventListener('scroll', moreOnUserScroll, { passive: true });
+  nav.addEventListener('wheel', (event) => {
+    if (event.deltaY > 0) { pane.scrollIntent = Date.now(); requestAnimationFrame(moreOnUserScroll); }
+  }, { passive: true });
+  nav.addEventListener('touchmove', () => { pane.scrollIntent = Date.now(); }, { passive: true });
+  nav.addEventListener('pointerdown', (event) => { if (event.target === nav) pane.scrollIntent = Date.now(); });
+  nav.addEventListener('keydown', (event) => {
+    if (['ArrowDown', 'PageDown', 'End'].includes(event.key)) { pane.scrollIntent = Date.now(); requestAnimationFrame(moreOnUserScroll); }
+  });
+}
+$('project').addEventListener('change', () => {
+  const project = $('project').value;
+  if (state.thread) newChat();
+  setProject(project);
+  updateComposer();
+});
+$('model').addEventListener('change', () => {
+  state.settings.model = $('model').value;
+  const model = selectedModel();
+  const efforts = (model?.supportedReasoningEfforts || []).map((item) => item.reasoningEffort);
+  if (!efforts.includes(state.settings.effort)) {
+    const configured = state.runtime.defaults.effort || state.runtime.defaults.reasoningEffort;
+    state.settings.effort = efforts.includes(configured) ? configured : model?.defaultReasoningEffort || efforts[0] || '';
+  }
+  const tiers = ['default', ...(model?.serviceTiers || []).map((tier) => tier.id)];
+  if (!tiers.includes(state.settings.serviceTier)) state.settings.serviceTier = model?.defaultServiceTier || 'default';
+  renderRuntimeControls();
+  renderUsage();
+});
+$('effort').addEventListener('change', () => { state.settings.effort = $('effort').value; });
+$('service-tier').addEventListener('change', () => { state.settings.serviceTier = $('service-tier').value; });
+$('usage-toggle').addEventListener('click', () => {
+  $('usage-panel').hidden = !$('usage-panel').hidden;
+  $('usage-toggle').setAttribute('aria-expanded', String(!$('usage-panel').hidden));
+});
+$('usage-close').addEventListener('click', () => { $('usage-panel').hidden = true; $('usage-toggle').setAttribute('aria-expanded', 'false'); });
 $('composer').addEventListener('submit', sendMessage);
 $('stop').addEventListener('click', stopTurn);
 $('prompt').addEventListener('keydown', (event) => {
@@ -563,7 +893,8 @@ $('logout').addEventListener('click', async () => {
   try {
     await api('/api/logout', {});
     state.thread = null;
-    state.threads = [];
+    for (const pane of Object.values(state.panes)) { pane.version++; pane.items = []; pane.cursor = null; pane.initialized = false; }
+    state.settingsReady = false;
     clearMessages();
     for (const card of state.requests.values()) card.remove();
     state.requests.clear();
@@ -571,7 +902,7 @@ $('logout').addEventListener('click', async () => {
   } catch (error) { notice(error); }
 });
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && !$('app').hidden) { void loadStatus().catch(notice); void reconcileThread(); void loadRequests(); }
+  if (!document.hidden && !$('app').hidden) { void loadStatus().catch(notice); void reconcileThread(); void loadRequests(); void loadRuntime(); }
 });
 setInterval(() => {
   if (!$('app').hidden && !document.hidden) {
@@ -579,4 +910,5 @@ setInterval(() => {
     if (state.requests.size) void loadRequests();
   }
 }, 15000);
+setInterval(() => { if (!$('app').hidden && !document.hidden) void loadRuntime(); }, 60000);
 void init();

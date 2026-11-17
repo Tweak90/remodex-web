@@ -1,5 +1,7 @@
 # CLAUDE.md (Local-First)
 
+<!-- Modified by the remodex-web fork: browser history requirements. -->
+
 Keep this file and `AGENTS.md` aligned.
 
 This repo is local-first now. Do not reintroduce hosted-service assumptions, remote deployment runbooks, or hardcoded production domains.
@@ -9,7 +11,7 @@ This repo is local-first now. Do not reintroduce hosted-service assumptions, rem
 - Prefer local Mac runtime, local bridge, QR pairing, and daemon workflows.
 - Be an intraprendente agent: proactively inspect local code, protocol/schema, and official sources to confirm facts before replying; do not repeatedly stop to ask for confirmation when the next verification step is safe and obvious.
 - Keep repo isolation by thread/project metadata and local `cwd`.
-- Do not reintroduce filtering by selected repo in sidebar/content.
+- In the browser client, show chats for the selected project in one scrollable section and chats without a project in a separate section. Load ten initially and five more only when the user scrolls. Preserve the upstream mobile client's existing behavior unless explicitly requested otherwise.
 - Keep cross-repo open/create flow with automatic local context switch.
 - Preserve single responsibility: shared logic belongs in services/coordinators, not duplicated in views.
 - Treat this repo as open source: avoid junk code, placeholder hacks, noisy one-off workarounds, and low-signal docs.

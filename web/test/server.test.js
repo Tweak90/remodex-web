@@ -1,4 +1,4 @@
-// HTTP security and session integration tests added by the Asgard Codex fork.
+// HTTP security and session integration tests added by the remodex-web fork.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';

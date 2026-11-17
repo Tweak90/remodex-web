@@ -8,8 +8,9 @@
 A self-hosted browser interface for an **existing Codex environment**, forked
 from [ESCANOR-001/remodex](https://github.com/ESCANOR-001/remodex).
 
-The added web client provides project selection, existing conversations,
-streaming replies, interruption, and approval/question handling. It connects
+The added web client provides project selection, independently scrolling
+project and unassigned conversation lists, model and reasoning controls,
+remaining usage, streaming replies, interruption, and approval/question handling. It connects
 server-side to your existing authenticated Codex WebSocket gateway; execution,
 tools, projects, and history stay on that Codex machine. No additional Codex
 runtime or OpenAI login is created in Docker.
